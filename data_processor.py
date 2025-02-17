@@ -179,7 +179,7 @@ class data_proc:
 
                             np_lidar = np.zeros((np_im.shape[0], np_im.shape[1]))
 
-                            name = f"{num}00{main_dir}00{count}.txt"
+                            name = f"{num}00{main_dir}00{count}"
 
                             index = 0
                             for z in zc:
