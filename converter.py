@@ -1,107 +1,132 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-from tqdm.auto import tqdm
-from types import SimpleNamespace
-import os
+#!/usr/bin/env python2
+
 from PIL import Image
+import argparse
+import os
 import csv
-import shutil
-import cv2
-import yaml
-from sklearn.model_selection import train_test_split
 
+OUT_LABELS_DIR = "labels"
 
+KEY_PEDESTRIAN = "Pedestrian"
+KEY_CYCLIST = "Cyclist"
+KEY_CAR = "Car"
+KEY_VAN = "Van"
+KEY_MISC = "Misc"
+KEY_TRUCK = "Truck"
+KEY_PERSON_SITTING = "Person_sitting"
+KEY_TRAM = "Tram"
+KEY_DONT_CARE = "DontCare"
 
-kitti_base_path = '/kaggle/input/kitte-dataset/training'
-yolo_base_path = '/kaggle/working/yolo'  # Use a writable directory
-images_path = os.path.join(kitti_base_path, 'image_2')
-labels_path = os.path.join(kitti_base_path, 'label_2')
-yolo_images_path = os.path.join(yolo_base_path, 'images')
-yolo_labels_path = os.path.join(yolo_base_path, 'labels')
+CLAZZ_NUMBERS = {
+            KEY_PEDESTRIAN : 0,
+            KEY_CYCLIST : 1,
+            KEY_CAR : 2,
+            KEY_DONT_CARE : 3
+        }
 
-# Create YOLO directories
-os.makedirs(yolo_images_path, exist_ok=True)
-os.makedirs(yolo_labels_path, exist_ok=True)
+def getSampleId(path):
+    basename = os.path.basename(path)
+    return os.path.splitext(basename)[0]
 
-kitti_classes = ['Car', 'Van', 'Truck', 'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram', 'Misc']
+def resolveClazzNumberOrNone(clazz, use_dont_care):
+    if clazz == KEY_CYCLIST:
+        return CLAZZ_NUMBERS[KEY_CYCLIST]
+    #if clazz in (KEY_PEDESTRIAN, KEY_PERSON_SITTING):
+    if clazz == KEY_PEDESTRIAN:
+        return CLAZZ_NUMBERS[KEY_PEDESTRIAN]
+    #if clazz in (KEY_CAR, KEY_VAN):
+    if clazz == KEY_CAR:
+        return CLAZZ_NUMBERS[KEY_CAR]
+    if use_dont_care and clazz == KEY_DONT_CARE:
+        return CLAZZ_NUMBERS[KEY_DONT_CARE] # These should not be punished.
+    return None
 
-# Define function to convert KITTI bbox to YOLO bbox
-def convert_bbox(size, box):
+def convertToYoloBBox(bbox, size):
+    # Yolo uses bounding bbox coordinates and size relative to the image size.
+    # This is taken from https://pjreddie.com/media/files/voc_label.py .
     dw = 1. / size[0]
     dh = 1. / size[1]
-    x = (box[0] + box[1]) / 2.0
-    y = (box[2] + box[3]) / 2.0
-    w = box[1] - box[0]
-    h = box[3] - box[2]
+    x = (bbox[0] + bbox[1]) / 2.0
+    y = (bbox[2] + bbox[3]) / 2.0
+    w = bbox[1] - bbox[0]
+    h = bbox[3] - bbox[2]
     x = x * dw
     w = w * dw
     y = y * dh
     h = h * dh
     return (x, y, w, h)
 
-# Process each label file
-for label_file in os.listdir(labels_path):
-    if not label_file.endswith('.txt'):
-        continue
-    image_file = label_file.replace('.txt', '.png')
+def readRealImageSize(img_path):
+    # This loads the whole sample image and returns its size.
+    return Image.open(img_path).size
 
-    image = cv2.imread(os.path.join(images_path, image_file))
-    h, w, _ = image.shape
+def readFixedImageSize():
+    # This is not exact for all images but most (and it should be faster).
+    return (1242, 375)
 
-    with open(os.path.join(labels_path, label_file), 'r') as lf:
-        lines = lf.readlines()
-    yolo_labels = []
-    for line in lines:
-        elements = line.strip().split(' ')
-        class_id = elements[0]
-        if class_id in kitti_classes:
-            class_id = kitti_classes.index(class_id)  # In KITTI, the first element is the class
-            xmin, ymin, xmax, ymax = map(float, elements[4:8])
-            bbox = convert_bbox((w, h), (xmin, xmax, ymin, ymax))
-            yolo_labels.append(f"{class_id} {' '.join(map(str, bbox))}\n")
+def parseSample(lbl_path, img_path, use_dont_care):
+    with open(lbl_path) as csv_file:
+        reader = csv.DictReader(csv_file, fieldnames=["type", "truncated", "occluded", "alpha", "bbox2_left", "bbox2_top", "bbox2_right", "bbox2_bottom", "bbox3_height", "bbox3_width", "bbox3_length", "bbox3_x", "bbox3_y", "bbox3_z", "bbox3_yaw", "score"], delimiter=" ")
+        yolo_labels = []
+        for row in reader:
+            clazz_number = resolveClazzNumberOrNone(row["type"], use_dont_care)
+            if clazz_number is not None:
+                size = readRealImageSize(img_path)
+                #size = readFixedImageSize()
+                # Image coordinate is in the top left corner.
+                bbox = (
+                        float(row["bbox2_left"]),
+                        float(row["bbox2_right"]),
+                        float(row["bbox2_top"]),
+                        float(row["bbox2_bottom"])
+                       )
+                yolo_bbox = convertToYoloBBox(bbox, size)
+                # Yolo expects the labels in the form:
+                # <object-class> <x> <y> <width> <height>.
+                yolo_label = (clazz_number,) + yolo_bbox
+                yolo_labels.append(yolo_label)
+    return yolo_labels
 
-    with open(os.path.join(yolo_labels_path, label_file), 'w') as yf:
-        yf.writelines(yolo_labels)
-    # Copy image to YOLO directory
-    shutil.copy(os.path.join(images_path, image_file), yolo_images_path)
+def parseArguments():
+    parser = argparse.ArgumentParser(description="Generates labels for training darknet on KITTI.")
+    parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI.")
+    parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
+    parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training between 0.0 and 1.0.")
+    parser.add_argument("--use-dont-care", action="store_true", help="do not ignore 'DontCare' labels.")
+    args = parser.parse_args()
+    if args.training_samples < 0 or args.training_samples > 1:
+        print("Invalid argument {} for --training-samples. Expected a percentage value between 0.0 and 1.0.")
+        exit(-1)
+    return args
 
-# Split dataset into train, val, test sets
-all_images = [f for f in os.listdir(yolo_images_path) if f.endswith('.png')]
-train_images, test_images = train_test_split(all_images, test_size=0.2, random_state=42)
-val_images, test_images = train_test_split(test_images, test_size=0.5, random_state=42)
+def main():
+    args = parseArguments()
 
-# Function to move files to appropriate directories
-def move_files(file_list, dest_dir):
-    os.makedirs(os.path.join(dest_dir, 'images'), exist_ok=True)
-    os.makedirs(os.path.join(dest_dir, 'labels'), exist_ok=True)
-    for file_name in file_list:
-        shutil.move(os.path.join(yolo_images_path, file_name), os.path.join(dest_dir, 'images', file_name))
-        label_file = file_name.replace('.png', '.txt')
-        shutil.move(os.path.join(yolo_labels_path, label_file), os.path.join(dest_dir, 'labels', label_file))
+    if not os.path.exists(OUT_LABELS_DIR):
+        os.makedirs(OUT_LABELS_DIR)
 
-# Move files to train, val, test directories
-move_files(train_images, os.path.join(yolo_base_path, 'train'))
-move_files(val_images, os.path.join(yolo_base_path, 'val'))
-move_files(test_images, os.path.join(yolo_base_path, 'test'))
+    print("Generating darknet labels...")
+    sample_img_pathes = []
+    for dir_path, sub_dirs, files in os.walk(args.label_dir):
+        for file_name in files:
+            if file_name.endswith(".txt"):
+                lbl_path = os.path.join(dir_path, file_name)
+                sample_id = getSampleId(lbl_path)
+                img_path = os.path.join(args.image_2_dir, "{}.png".format(sample_id))
+                sample_img_pathes.append(img_path)
+                yolo_labels = parseSample(lbl_path, img_path, args.use_dont_care)
+                with open(os.path.join(OUT_LABELS_DIR, "{}.txt".format(sample_id)), "w") as yolo_label_file:
+                    for lbl in yolo_labels:
+                        yolo_label_file.write("{} {} {} {} {}\n".format(*lbl))
 
-print("Conversion and splitting complete.")
+    print("Writing training and test sample ids...")
+    first_test_sample_index = int(args.training_samples * len(sample_img_pathes))
+    with open("kitti_train.txt", "w") as train_file:
+        for sample_index in range(first_test_sample_index):
+            train_file.write("{}\n".format(sample_img_pathes[sample_index]))
+    with open("kitti_test.txt", "w") as test_file:
+        for sample_index in range(first_test_sample_index, len(sample_img_pathes)):
+            test_file.write("{}\n".format(sample_img_pathes[sample_index]))
 
-
-
-# Define the data dictionary
-data = {
-    'train': '/kaggle/working/yolo/train/images',
-    'val': '/kaggle/working/yolo/val/images',
-    'test': '/kaggle/working/yolo/test/images',
-    'nc': 8,  # number of classes
-    'names': ['Car', 'Van', 'Truck', 'Pedestrian', 'Person_sitting', 'Cyclist', 'Tram', 'Misc']
-}
-
-# Save to data.yaml
-with open('/kaggle/working/yolo/data.yaml', 'w') as outfile:
-    yaml.dump(data, outfile, default_flow_style=False)
-
-print("data.yaml file created successfully.")
-
+if __name__ == "__main__":
+    main()
