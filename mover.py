@@ -4,13 +4,17 @@ import shutil
 main_dir = Path("/home/lixion/rgbd/2011_09_26")
 data = Path("/home/lixion/rgbd/combined")
 
+data.mkdir(parents=True, exist_ok=True)
 
 for subdir in main_dir.iterdir():
     print(subdir)
     images = Path(subdir, "processed", "images")
     labels = Path(subdir, "processed", "labels")
     lidar = Path(subdir, "processed", "lidar")
-
+    
+    (Path(data, "images")).mkdir(parents=True, exist_ok=True)
+    (Path(data, "labels")).mkdir(parents=True, exist_ok=True)
+    (Path(data, "lidar")).mkdir(parents=True, exist_ok=True)
     
     for im in images.iterdir():
         lid_og = Path(lidar, (im.with_suffix('.npy')).name)
