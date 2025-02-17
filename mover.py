@@ -13,9 +13,7 @@ for subdir in main_dir.iterdir():
 
     
     for im in images.iterdir():
-        print(im)
         lid_og = Path(lidar, (im.with_suffix('.npy')).name)
-        print(lid_og)
         la_og = Path(labels, (im.with_suffix('.txt')).name)
 
         im_dest = Path(data, "images", im.name)

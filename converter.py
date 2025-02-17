@@ -4,6 +4,7 @@ from PIL import Image
 import argparse
 import os
 import csv
+from pathlib import Path
 
 OUT_LABELS_DIR = "labels"
 
@@ -91,6 +92,7 @@ def parseArguments():
     parser = argparse.ArgumentParser(description="Generates labels for training darknet on KITTI.")
     parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI.")
     parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
+    parser.add_argument("lidar_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
     parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training between 0.0 and 1.0.")
     parser.add_argument("--use-dont-care", action="store_true", help="do not ignore 'DontCare' labels.")
     args = parser.parse_args()
@@ -121,12 +123,20 @@ def main():
 
     print("Writing training and test sample ids...")
     first_test_sample_index = int(args.training_samples * len(sample_img_pathes))
-    with open("kitti_train.txt", "w") as train_file:
+    with open("kitti_train.txt", "w") as train_file, open("kitti_test.txt", "w") as test_file:
         for sample_index in range(first_test_sample_index):
-            train_file.write("{}\n".format(sample_img_pathes[sample_index]))
-    with open("kitti_test.txt", "w") as test_file:
+            # Writing image and lidar paths for training samples
+            img_path = sample_img_pathes[sample_index]
+            filename = Path(img_path).stem
+            lidar_path = str(Path(args.lidar_2_dir, (str(filename) + ".npy"))) # Assuming lidar has the same base name as the image
+            train_file.write("{}\t{}\n".format(img_path, lidar_path))
+
         for sample_index in range(first_test_sample_index, len(sample_img_pathes)):
-            test_file.write("{}\n".format(sample_img_pathes[sample_index]))
+            # Writing image and lidar paths for test samples
+            img_path = sample_img_pathes[sample_index]
+            filename = Path(img_path).stem
+            lidar_path = str(Path(args.lidar_2_dir, (str(filename) + ".npy"))) # Assuming lidar has the same base name as the image
+            train_file.write("{}\t{}\n".format(img_path, lidar_path))
 
 if __name__ == "__main__":
     main()
