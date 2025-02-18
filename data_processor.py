@@ -210,8 +210,9 @@ class data_proc:
             if 'image_02' in subdir.name:
                 data_dir = subdir / 'data'
                 if data_dir.exists() and data_dir.is_dir():
-                    count = 0
+                    count = -1
                     for im in data_dir.iterdir():
+                        count += 1
 
                         v_fov, h_fov = (-24.9, 2.0), (-90, 90)
                         velo_path = Path(lidar, im.name)
@@ -224,6 +225,7 @@ class data_proc:
                         
                         points = res.velo_file
                         tracklet_, type_, descrption = res.tracklet_info
+
                         image = res.camera_file
 
                         tracklet2d = []
@@ -288,9 +290,6 @@ class data_proc:
                         except Exception as e:
                             print(f"Error processing data at count {count}: {e}")
 
-
-
-                        count += 1
 
                         
       

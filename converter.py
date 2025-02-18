@@ -44,17 +44,25 @@ def resolveClazzNumberOrNone(clazz, use_dont_care):
 
 def convertToYoloBBox(bbox, size):
     # Yolo uses bounding bbox coordinates and size relative to the image size.
-    # This is taken from https://pjreddie.com/media/files/voc_label.py .
     dw = 1. / size[0]
     dh = 1. / size[1]
     x = (bbox[0] + bbox[1]) / 2.0
     y = (bbox[2] + bbox[3]) / 2.0
     w = bbox[1] - bbox[0]
     h = bbox[3] - bbox[2]
+    
+    # Normalize the coordinates
     x = x * dw
     w = w * dw
     y = y * dh
     h = h * dh
+    
+    # Clamp values to be within [0, 1]
+    x = max(0, min(x, 1))
+    y = max(0, min(y, 1))
+    w = max(0, min(w, 1))
+    h = max(0, min(h, 1))
+    
     return (x, y, w, h)
 
 def readRealImageSize(img_path):
@@ -93,7 +101,7 @@ def parseArguments():
     parser.add_argument("label_dir", help="data_object_label_2/training/label_2 directory; can be downloaded from KITTI.")
     parser.add_argument("image_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
     parser.add_argument("lidar_2_dir", help="data_object_image_2/training/image_2 directory; can be downloaded from KITTI.")
-    parser.add_argument("--training-samples", type=int, default=0.8, help="percentage of the samples to be used for training between 0.0 and 1.0.")
+    parser.add_argument("--training_samples", type=int, default=0.8, help="percentage of the samples to be used for training between 0.0 and 1.0.")
     parser.add_argument("--use-dont-care", action="store_true", help="do not ignore 'DontCare' labels.")
     args = parser.parse_args()
     if args.training_samples < 0 or args.training_samples > 1:
@@ -129,14 +137,16 @@ def main():
             img_path = sample_img_pathes[sample_index]
             filename = Path(img_path).stem
             lidar_path = str(Path(args.lidar_2_dir, (str(filename) + ".npy"))) # Assuming lidar has the same base name as the image
-            train_file.write("{}\t{}\n".format(img_path, lidar_path))
+            #train_file.write("{}\t{}\n".format(img_path, lidar_path))
+            train_file.write("{}\n".format(img_path))
 
         for sample_index in range(first_test_sample_index, len(sample_img_pathes)):
             # Writing image and lidar paths for test samples
             img_path = sample_img_pathes[sample_index]
             filename = Path(img_path).stem
             lidar_path = str(Path(args.lidar_2_dir, (str(filename) + ".npy"))) # Assuming lidar has the same base name as the image
-            train_file.write("{}\t{}\n".format(img_path, lidar_path))
+            #test_file.write("{}\t{}\n".format(img_path, lidar_path))
+            test_file.write("{}\n".format(img_path))
 
 if __name__ == "__main__":
     main()
