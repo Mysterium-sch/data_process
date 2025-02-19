@@ -1,0 +1,12 @@
+im_path: "/home/lixion/rgbd/combined/images"
+li_path: "/home/lixion/rgbd/combined/lidar"
+la_path: "/home/lixion/rgbd/labels"
+
+train: "/home/lixion/rgbd/kitti_train.txt"
+test: "/home/lixion/rgdb/kitti_test.txt"
+
+names:
+    0: person
+    1: bicycle
+    2: car
+    3: don't care
