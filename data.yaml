@@ -1,7 +1,7 @@
 path: "/home/lixion/rgbd/data_process/yolov5/data/"
 
-train: "images"
-val: "images"
+train: ["images", "lidar/d"]
+val: ["images", "lidar/d"]
 
 channels: 4
 

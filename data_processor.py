@@ -3,23 +3,18 @@ import cv2
 import os
 from pathlib import Path
 import glob
-import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import pykitti
-from kitti_fondation import Kitti, Kitti_util
-from src import parseTrackletXML as pt_XML
-import torch
-import pandas as pd
+#from kitti_fondation import Kitti, Kitti_util
+#from src import parseTrackletXML as pt_XML
 from PIL import Image
 
 
 class data_proc:
     
-    def __init__(self, images, vel_cal, cam_cal, lidar, labels, out):
+    def __init__(self, images, cali, lidar, labels, out):
         self.image_path = images
-        self.vel_cal = vel_cal
-        self.cam_cal = cam_cal
+        self.cali = cali
         self.lidar_path = lidar
         self.labels_path = labels
 
@@ -27,31 +22,9 @@ class data_proc:
         #self.image_data = self.load_images(self.image_path)
         #self.calibration = self.loadCalib(self.cali_path)
 
-        #self.processPoints(self.image_path, self.lidar_path, self.vel_cal, self.cam_cal)
-        self.processTracks(self.image_path, self.lidar_path, self.vel_cal, self.cam_cal, self.labels_path, out)
+        self.processPoints(self.image_path, self.lidar_path, self.cali, self.labels_path, out)
+        #self.processTracks(self.image_path, self.lidar_path, self.cali, self.labels_path, out)
 
-        # save one frame about projecting velodyne points into camera image
-        image_type = 'rgb'  # 'gray' or 'color' image
-        mode = '00' if image_type == 'gray' else '02'  # image_00 = 'graye image' , image_02 = 'color image'
-
-        self.image_path += 'image_' + mode + '/data'
-        velo_path = self.lidar_path
-
-        v_fov, h_fov = (-24.9, 2.0), (-90, 90)
-
-        v2c_filepath = vel_cal
-        c2c_filepath = cam_cal
-
-        res = Kitti_util(frame=89, camera_path=self.image_path, velo_path=velo_path, \
-                        v2c_path=v2c_filepath, c2c_path=c2c_filepath)
-
-        img, pnt, xyz, c_ = res.velo_projection_frame(v_fov=v_fov, h_fov=h_fov)
-        zc = xyz[::][2]
-
-        tracks = pt_XML.parseXML(labels)
-        
-
-        result = self.print_projection_plt(pnt, c_, img)
         
     def print_projection_cv2(self, points, color, image):
         """ project converted velodyne points into camera image """
@@ -140,51 +113,62 @@ class data_proc:
         print(tracks.amtBorders)    # None (n x 3) float array  (amt_border_l / _r / _kf)
         print(tracks.nFrames)
 
-    def processPoints(self, images, lidar, vel_cal, cam_cal):
-        lidar_path = os.path.join('.', 'processed', 'lidar')
-        images_path = os.path.join('.', 'processed', 'images')
-        cali = ""
+    def processPoints(self, images, lidar, cali, labels, out):
+        lidar_path = os.path.join(out, 'processed', 'lidar')
+        images_path = os.path.join(out, 'processed', 'images')
+        labels_path = os.path.join(out, 'processed', 'labels')
+
+        os.makedirs(lidar_path, exist_ok=True)
+        os.makedirs(images_path, exist_ok=True)
+        os.makedirs(labels_path, exist_ok=True)
 
         images_dir = Path(images)
+        lidar_dir = Path(lidar)
+        labels_dir = Path(labels)
+        cali_dir = Path(cali)
+
+
         
         main_dir = -1
-        for subdir in images_dir.iterdir():
-            main_dir += 1
-            if 'image' in subdir.name:
-                data_dir = subdir / 'data'
-                if data_dir.exists() and data_dir.is_dir():
-                    count = 0
-                    for im in data_dir.iterdir():
-                        print(data_dir)
-                        print(count)
-                        v_fov, h_fov = (-24.9, 2.0), (-90, 90)
-                        velo_path = Path(lidar, im.name)
+        count = 0
+        for im in images_dir.iterdir():
 
-                        v2c_filepath = vel_cal
-                        c2c_filepath = cam_cal
+            name = im.stem
+            li = Path(lidar_dir, (name + ".bin"))
+            ca = Path(cali_dir, (name + ".txt"))
+            la = Path(labels_dir, (name + ".txt"))
 
-                        res = kittiDataset(im, velo_path, v2c_filepath)
+            print(im, " ", li, " ", ca, " ", la)
 
-                        img, pnt, xyz, c_ = res.velo_projection_frame(v_fov=v_fov, h_fov=h_fov)
-                        zc = xyz[::][2]
+            v_fov, h_fov = (-24.9, 2.0), (-90, 90)
 
-                        np_im = np.array(img)
-                        image = Image.fromarray(img)
 
-                        np_lidar = np.zeros((np_im.shape[0], np_im.shape[1]))
+            res = kittiDataset(im, li, ca)
 
-                        name = str(main_dir) + "00000" + str(count)
+            img, pnt, xyz, c_ = res.velo_projection_frame(v_fov=v_fov, h_fov=h_fov)
+            cv2.imshow("image", pnt)
+            cv2.waitKey(5000)
+            cv2.destroyAllWindows()
 
-                        index = 0
-                        for z in zc:
-                            x = np.int32(pnt[0, index])
-                            y = np.int32(pnt[1, index])
-                            if (x < np_lidar.shape[1] and y < np_lidar.shape[0] and x > 0 and y > 0 ):
-                                np_lidar[y, x] = z
-                            index += 1
-                        np.save(Path(lidar_path, (name + ".npy")), np_lidar)    
-                        image.save(Path(images_path, (name + ".png")))
-                        count += 1
+            zc = xyz[::][2]
+
+            np_im = np.array(img)
+            image = Image.fromarray(img)
+
+            np_lidar = np.zeros((np_im.shape[0], np_im.shape[1]))
+
+            name = "00000" + str(count)
+
+            index = 0
+            for z in zc:
+                x = np.int32(pnt[0, index])
+                y = np.int32(pnt[1, index])
+                if (x < np_lidar.shape[1] and y < np_lidar.shape[0] and x > 0 and y > 0 ):
+                    np_lidar[y, x] = z
+                    index += 1
+            np.save(Path(lidar_path, (name + ".npy")), np_lidar)    
+            image.save(Path(images_path, (name + ".png")))
+            count += 1
                         
     def processTracks(self, images, lidar, vel_cal, cam_cal, tracks_path, out):
         labels_path = os.path.join(out, 'processed', 'labels')
@@ -208,8 +192,7 @@ class data_proc:
                         v2c_filepath = vel_cal
                         c2c_filepath = cam_cal
 
-                        res = Kitti_util(frame=count, camera_path=str(data_dir), velo_path=str(lidar), \
-                                            xml_path=tracks_path, v2c_path=v2c_filepath, c2c_path=c2c_filepath)
+                        res = kittiDataset(im, lidar_path, cali)
                         
                         points = res.velo_file
                         tracklet_, type_, descrption = res.tracklet_info
@@ -287,18 +270,18 @@ class kittiDataset:
 
     def __get_camera_frame(self, files):
         """ Return image for one frame """
-        frame = cv2.imread(files)
+        frame = cv2.imread(str(files))
         self.__img_size = frame.shape
         return frame
     
     def __get_velo_frame(self, file):
         """ Convert bin to numpy array for one frame """
-        points = np.fromfile(file, dtype=np.float32).reshape(-1, 4)
+        points = np.fromfile(str(file), dtype=np.float32).reshape(-1, 4)
         return points[:, :3]
     
     def __load_velo2cam(self, cali):
         """ load Velodyne to Camera calibration info file """
-        with open(cali, "r") as f:
+        with open(str(cali), "r") as f:
             file = f.readlines()
             return file
         
@@ -308,14 +291,14 @@ class kittiDataset:
         using R,T matrix, we can convert velodyne coordinates to camera coordinates
         """
 
-        for line in self.cali_file:
+        for line in cali_file:
             (key, val) = line.split(':', 1)
             if key == 'Tr_velo_to_cam':
                 TR = np.fromstring(val, sep=' ')
-                TR = TR.reshape(4, 3)
-            R = TR[:3, :3]
-            T = TR[:3, 3]
-        return R, T
+                TR = TR.reshape(3, 4)
+                R = TR[:3, :3]
+                T = TR[:3, 3]
+                return TR
 
     def __calib_cam2cam(self, cali_file):
         """
@@ -334,7 +317,7 @@ class kittiDataset:
                 P_ = P_.reshape(3, 4)
                 # erase 4th column ([0,0,0])
                 P_ = P_[:3, :3]
-        return P_
+                return P_
 
     def __velo_2_img_projection(self, points):
         """ convert velodyne coordinates to camera image coordinates """
@@ -349,10 +332,12 @@ class kittiDataset:
 
         # R_vc = Rotation matrix ( velodyne -> camera )
         # T_vc = Translation matrix ( velodyne -> camera )
-        R_vc, T_vc = self.__calib_velo2cam(self.cali)
+        RT_ = self.__calib_velo2cam(self.cali)
+        
 
         # P_ = Projection matrix ( camera coordinates 3d points -> image plane 2d points )
-        P_ = self.__calib_cam2cam()
+        P_ = self.__calib_cam2cam(self.cali)
+        print(P_)
 
         """
         xyz_v - 3D velodyne points corresponding to h, v FOV limit in the velodyne coordinates
@@ -373,7 +358,7 @@ class kittiDataset:
         RT_  =  [r_21 , r_22 , r_23 , t_y ]
                 [r_31 , r_32 , r_33 , t_z ]
         """
-        RT_ = np.concatenate((R_vc, T_vc), axis=1)
+        #RT_ = np.concatenate((R_vc, T_vc), axis=1)
 
         # convert velodyne coordinates(X_v, Y_v, Z_v) to camera coordinates(X_c, Y_c, Z_c)
         for i in range(xyz_v.shape[1]):
@@ -385,11 +370,20 @@ class kittiDataset:
         xyz_c =  [y_1 , y_2 , .. ]
                  [z_1 , z_2 , .. ]
         """
+
         xyz_c = np.delete(xyz_v, 3, axis=0)
+
 
         # convert camera coordinates(X_c, Y_c, Z_c) image(pixel) coordinates(x,y)
         for i in range(xyz_c.shape[1]):
             xyz_c[:, i] = np.matmul(P_, xyz_c[:, i])
+
+        plt.scatter(xyz_c[0], xyz_c[1], cmap='viridis')  # Use xyz_c[0] as x, xyz_c[1] as y, and color by z
+        plt.title("2D Scatter of 3D Velodyne Points")
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.colorbar(label='Z')  # Optional: color bar for the Z values
+        plt.show()     
 
         """
         xy_i - 3D velodyne points corresponding to h, v FOV in the image(pixel) coordinates before scale adjustment
@@ -419,7 +413,7 @@ class kittiDataset:
         R_vc, T_vc = self.__calib_velo2cam()
 
         # P_ = Projection matrix ( camera coordinates 3d points -> image plane 2d points )
-        P_ = self.__calib_cam2cam()
+        P_ = self.__calib_cam2cam(self.cali)
 
         """
         xyz_v - 3D velodyne points corresponding to h, v FOV limit in the velodyne coordinates
@@ -594,14 +588,13 @@ class kittiDataset:
             return (((val - min) / (max - min)) * scale).astype(np.uint8)
 
         
-labels = '/home/lixion/stuff/kitti/2011_09_26_drive_0001_tracklets/2011_09_26/2011_09_26_drive_0001_sync/tracklet_labels.xml'
-images = '/home/lixion/stuff/kitti/2011_09_26_drive_0001_sync/2011_09_26/2011_09_26_drive_0001_sync/'
-lidar = '/home/lixion/stuff/kitti/2011_09_26_drive_0001_sync/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/'
-cam_to_cam = '/home/lixion/stuff/kitti/2011_09_26_calib/2011_09_26/calib_cam_to_cam.txt'
-vel_to_cam = '/home/lixion/stuff/kitti/2011_09_26_calib/2011_09_26/calib_velo_to_cam.txt'
+labels = '/home/lixion/rgbd/data/data_object_label_2/training/label_2'
+images = '/home/lixion/rgbd/data/data_object_image_2/training/image_2'
+lidar = '/home/lixion/rgbd/data/data_object_velodyne/training/velodyne'
+cali = '/home/lixion/rgbd/data/data_object_calib/training/calib'
 
 out = "."
 
 # lidar data is in X, Y, Z, reflectivity 
 
-kitti_data = data_proc(images, vel_to_cam, cam_to_cam, lidar, labels, out)
+kitti_data = data_proc(images, cali, lidar, labels, out)
