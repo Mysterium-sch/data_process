@@ -15,12 +15,14 @@ for filename in os.listdir(input_directory):
         # Load the numpy file
         file_path = os.path.join(input_directory, filename)
         data = np.load(file_path)
+        print(data.shape)
 
         # Check if the data has more than two dimensions
         if len(data.shape) > 2:
             # Handle 3D or 4D arrays
             if data.ndim == 3:  # If the data is 3D (height, width, channels)
                 second_channel = data[:, :, 0]*3  # Extract the second channel (index 1)
+                #print(np.max(data[:, :, 1]))
             elif data.ndim == 4:  # If the data is 4D (batch, height, width, channels)
                 second_channel = data[0, :, :, 1]  # Extract the second channel from the first batch
 
@@ -30,8 +32,9 @@ for filename in os.listdir(input_directory):
 
             # Save the extracted channel as a new PNG file
             output_filename = filename.replace('.npy', '.png')
-            output_path = os.path.join(output_directory, output_filename)
-            image.save(output_path)
+            output_path = os.path.join(output_directory, filename)
+            #image.save(output_path)
+            np.save(output_path, second_channel)
             print(f"Saved {output_path}")
         else:
             print(f"{filename} does not have multiple channels.")
